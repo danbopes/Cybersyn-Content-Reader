@@ -7,17 +7,14 @@
 local flib = require('__flib__.data-util')
 
 local provider_reader_entity = flib.copy_prototype(data.raw["constant-combinator"]["constant-combinator"], "cybersyn-provider-reader")
-provider_reader_entity.item_slot_count = 50 -- will be overwritten in final-fixes
 provider_reader_entity.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-provider-reader.png"
 provider_reader_entity.icon_size = 64
-provider_reader_entity.icon_mipmaps = 4
 provider_reader_entity.gui_mode = "all"
 provider_reader_entity.gui_style = "cybersyn_content_reader_gui"
 
 local provider_reader_item = flib.copy_prototype(data.raw["item"]["constant-combinator"], "cybersyn-provider-reader")
 provider_reader_item.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-provider-reader.png"
 provider_reader_item.icon_size = 64
-provider_reader_item.icon_mipmaps = 4
 provider_reader_item.subgroup = "circuit-network-2"
 provider_reader_item.order = "cybersynr-a"
 -- provider_reader_item.order = provider_reader_item.order.."b" -- sort after constant_combinator
@@ -26,10 +23,8 @@ local provider_reader_recipe = flib.copy_prototype(data.raw["recipe"]["constant-
 
 
 local requester_reader_entity = flib.copy_prototype(data.raw["constant-combinator"]["constant-combinator"], "cybersyn-requester-reader")
-requester_reader_entity.item_slot_count = 50 -- will be overwritten in final-fixes
 requester_reader_entity.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-requester-reader.png"
 requester_reader_entity.icon_size = 64
-requester_reader_entity.icon_mipmaps = 4
 requester_reader_entity.sprites = make_4way_animation_from_spritesheet(
   { layers =
     {
@@ -57,7 +52,6 @@ requester_reader_entity.sprites = make_4way_animation_from_spritesheet(
 local requester_reader_item = flib.copy_prototype(data.raw["item"]["constant-combinator"], "cybersyn-requester-reader")
 requester_reader_item.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-requester-reader.png"
 requester_reader_item.icon_size = 64
-requester_reader_item.icon_mipmaps = 4
 requester_reader_item.subgroup = "circuit-network-2"
 requester_reader_item.order = "cybersynr-b"
 -- requester_reader_item.order = requester_reader_item.order.."c" -- sort after constant_combinator
@@ -66,10 +60,8 @@ local requester_reader_recipe = flib.copy_prototype(data.raw["recipe"]["constant
 
 
 local delivery_reader_entity = flib.copy_prototype(data.raw["constant-combinator"]["constant-combinator"], "cybersyn-delivery-reader")
-delivery_reader_entity.item_slot_count = 50 -- will be overwritten in final-fixes
 delivery_reader_entity.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-delivery-reader.png"
 delivery_reader_entity.icon_size = 64
-delivery_reader_entity.icon_mipmaps = 4
 delivery_reader_entity.sprites = make_4way_animation_from_spritesheet(
   { layers =
     {
@@ -96,7 +88,6 @@ delivery_reader_entity.sprites = make_4way_animation_from_spritesheet(
 local delivery_reader_item = flib.copy_prototype(data.raw["item"]["constant-combinator"], "cybersyn-delivery-reader")
 delivery_reader_item.icon = "__Cybersyn-Content-Reader__/graphics/icons/cybersyn-delivery-reader.png"
 delivery_reader_item.icon_size = 64
-delivery_reader_item.icon_mipmaps = 4
 delivery_reader_item.subgroup = "circuit-network-2"
 delivery_reader_item.order = "cybersynr-c"
 -- delivery_reader_item.order = requester_reader_item.order.."d" -- sort after constant_combinator
@@ -132,7 +123,7 @@ else
       type = "technology",
       name = "circuit-network-2",
       icon = "__base__/graphics/technology/circuit-network.png",
-      icon_size = 256, icon_mipmaps = 4,
+      icon_size = 256,
       prerequisites = {"circuit-network"},
       effects =
       {

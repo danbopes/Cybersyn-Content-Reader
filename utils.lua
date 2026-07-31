@@ -1,5 +1,10 @@
 function get_signals(station)
 	local comb1 = station.entity_comb1
+	-- Cybersyn can hold a station whose combinator was destroyed or never
+	-- finished initialising; reading .status off that would raise.
+	if not comb1 or not comb1.valid then
+		return nil, nil
+	end
 	local status1 = comb1.status
 	---@type Signal[]?
 	local comb1_signals = nil
@@ -9,7 +14,7 @@ function get_signals(station)
 		comb1_signals = comb1.get_signals(defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
 	end
 	local comb2 = station.entity_comb2
-	if comb2 then
+	if comb2 and comb2.valid then
 		local status2 = comb2.status
 		if status2 == defines.entity_status.working or status2 == defines.entity_status.low_power then
 			comb2_signals = comb2.get_signals(defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
@@ -83,19 +88,19 @@ function get_first_signal(entity)
      ---@type LuaConstantCombinatorControlBehavior
     local behavior = entity.get_control_behavior()
 
-    if behavior == nil then
+    if behavior == nil or behavior.sections_count < 1 then
         return nil
     end
 
-    for _,section in pairs(behavior.sections) do
-        if section.active then
-            local first_signal = section.get_slot(1)
-
-            return first_signal
-        end
+    -- Section 1 holds the network selection; section 2 is where we write our
+    -- own output. Scanning for the first *active* section would read that
+    -- output back as configuration whenever section 1 is disabled.
+    local section = behavior.get_section(1)
+    if not section or not section.active then
+        return nil
     end
 
-    return nil
+    return section.get_slot(1)
 end
 
 ---@param entity LuaEntity

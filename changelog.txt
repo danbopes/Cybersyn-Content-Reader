@@ -1,4 +1,19 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2026-07-31
+  Features:
+    - Updated to Factorio 2.1. Now requires Factorio 2.1.7, flib 0.17.1 and Cybersyn 2.1.2.
+  Bugfixes:
+    - Existing readers that never updated are now picked up automatically instead of having to be rebuilt
+    - Readers placed on space platforms, or by scripts, blueprints and cloning, now work
+    - Fixed a crash when mining a reader after another reader was destroyed without an event
+    - Fixed a reader outputting nothing when its first logistic section was disabled
+    - Fixed a crash when Cybersyn holds a station whose combinator was destroyed
+  Changes:
+    - Requester and delivery readers now use their high resolution sprites and cast a correct shadow, thanks to UltraJohn
+    - Build and mine events are now filtered instead of firing for every entity placed
+
+---------------------------------------------------------------------------------------------------
 Version: 1.0.2
 Date: 2025-05-07
   Changes:

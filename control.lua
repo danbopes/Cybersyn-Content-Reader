@@ -121,10 +121,10 @@ function OnTick(event)
     if combinator.valid then
       Update_Combinator(combinator)
     else
+      -- The id cannot be recovered from an invalid entity, but unit_numbers are
+      -- never reused, so the stale key is inert until the next rescan clears it.
       table.remove(storage.content_combinators, i)
-      if #storage.content_combinators == 0 then
-        script.on_event(defines.events.on_tick, nil)
-      end
+      Update_Tick_Subscription()
     end
   end
 end
@@ -198,32 +198,76 @@ function Update_Combinator(combinator)
   end
 end
 
--- add/remove event handlers
---- @param event EventData.on_built_entity
-function OnEntityCreated(event)
-  local entity = event.entity
-  if content_readers[entity.name] then
-    table.insert(storage.content_combinators, entity)
-
-    if #storage.content_combinators == 1 then
-      script.on_event(defines.events.on_tick, OnTick)
-    end
+-- The on_tick handler is only subscribed while there is something to update.
+function Update_Tick_Subscription()
+  if #storage.content_combinators > 0 then
+    script.on_event(defines.events.on_tick, OnTick)
+  else
+    script.on_event(defines.events.on_tick, nil)
   end
 end
 
-function OnEntityRemoved(event)
-  local entity = event.entity
-  if content_readers[entity.name] then
-    for i=#storage.content_combinators, 1, -1 do
-      if storage.content_combinators[i].unit_number == entity.unit_number then
-        table.remove(storage.content_combinators, i)
-      end
-    end
+---@param entity LuaEntity?
+function Register_Combinator(entity)
+  if not entity or not entity.valid then return end
+  if not content_readers[entity.name] then return end
 
-    if #storage.content_combinators == 0 then
-			script.on_event(defines.events.on_tick, nil)
+  local id = entity.unit_number
+  if not id or storage.content_combinator_ids[id] then return end
+
+  storage.content_combinator_ids[id] = true
+  storage.content_combinators[#storage.content_combinators + 1] = entity
+  Update_Tick_Subscription()
+end
+
+---@param entity LuaEntity?
+function Unregister_Combinator(entity)
+  if not entity or not entity.valid then return end
+
+  local id = entity.unit_number
+  storage.content_combinator_ids[id] = nil
+  for i = #storage.content_combinators, 1, -1 do
+    -- The validity check has to come first: reading unit_number off an
+    -- invalid LuaEntity raises. It also prunes entities that were destroyed
+    -- without raising any event we subscribe to.
+    local c = storage.content_combinators[i]
+    if not c.valid or c.unit_number == id then
+      table.remove(storage.content_combinators, i)
     end
   end
+  Update_Tick_Subscription()
+end
+
+-- Readers that were placed while the mod was not listening (or by a script,
+-- a space platform, or a clone) are otherwise invisible to us forever, since
+-- nothing else ever repopulates this list.
+function Rescan_Combinators()
+  local names = {}
+  for name in pairs(content_readers) do names[#names + 1] = name end
+
+  storage.content_combinators = {}
+  storage.content_combinator_ids = {}
+  for _, surface in pairs(game.surfaces) do
+    for _, entity in pairs(surface.find_entities_filtered({ name = names })) do
+      Register_Combinator(entity)
+    end
+  end
+  Update_Tick_Subscription()
+end
+
+-- add/remove event handlers
+--- @param event EventData.on_built_entity
+function OnEntityCreated(event)
+  Register_Combinator(event.entity)
+end
+
+--- @param event EventData.on_entity_cloned
+function OnEntityCloned(event)
+  Register_Combinator(event.destination)
+end
+
+function OnEntityRemoved(event)
+  Unregister_Combinator(event.entity)
 end
 
 ---- Initialisation  ----
@@ -234,13 +278,43 @@ do
     storage.cybersyn_requested = storage.cybersyn_requested or {}
     storage.cybersyn_deliveries = storage.cybersyn_deliveries or {}
     storage.content_combinators = storage.content_combinators or {}
+    storage.content_combinator_ids = storage.content_combinator_ids or {}
+    storage.guis = storage.guis or {}
     storage.update_interval = settings.global["cybersyn_content_reader_update_interval"].value
   end
 
+  local reader_filter = {}
+  for name in pairs(content_readers) do
+    reader_filter[#reader_filter + 1] = { filter = "name", name = name }
+  end
+
   local function register_events()
-    -- register game events
-    script.on_event({defines.events.on_built_entity, defines.events.on_robot_built_entity}, OnEntityCreated)
-    script.on_event({defines.events.on_pre_player_mined_item, defines.events.on_robot_pre_mined, defines.events.on_entity_died}, OnEntityRemoved)
+    -- Cybersyn itself listens to the script-raised and space-platform variants;
+    -- missing them here is what left readers permanently dead.
+    -- Each event has to be registered on its own, since filters are rejected
+    -- when several events share one on_event call.
+    for _, id in pairs({
+      defines.events.on_built_entity,
+      defines.events.on_robot_built_entity,
+      defines.events.on_space_platform_built_entity,
+      defines.events.script_raised_built,
+      defines.events.script_raised_revive,
+    }) do
+      script.on_event(id, OnEntityCreated, reader_filter)
+    end
+
+    script.on_event(defines.events.on_entity_cloned, OnEntityCloned, reader_filter)
+
+    for _, id in pairs({
+      defines.events.on_pre_player_mined_item,
+      defines.events.on_robot_pre_mined,
+      defines.events.on_space_platform_mined_entity,
+      defines.events.on_entity_died,
+      defines.events.script_raised_destroy,
+    }) do
+      script.on_event(id, OnEntityRemoved, reader_filter)
+    end
+
     if #storage.content_combinators > 0 then
       script.on_event(defines.events.on_tick, OnTick)
     end
@@ -251,10 +325,12 @@ do
     init_globals()
     gui.on_init()
     register_events()
+    Rescan_Combinators()
   end)
 
   script.on_configuration_changed(function(data)
     init_globals()
+    Rescan_Combinators()
   end)
 
   script.on_load(function(data)
