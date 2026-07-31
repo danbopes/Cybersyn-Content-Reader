@@ -1,0 +1,66 @@
+name: Check
+
+# pull_request (not pull_request_target) on purpose: forked PRs run with a
+# read-only token and no access to FACTORIO_UPLOAD_API_KEY.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install fmtk
+        run: npm install -g factoriomod-debug
+
+      - name: Lua syntax
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lua5.2
+          find . -name '*.lua' -not -path './.git/*' -print0 \
+            | xargs -0 -n1 luac5.2 -p
+
+      - name: Read mod info
+        id: mod
+        run: |
+          {
+            echo "name=$(jq -r .name info.json)"
+            echo "version=$(jq -r .version info.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Changelog matches info.json
+        env:
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: |
+          # The portal silently ignores a malformed changelog, so check the bits
+          # that actually break: separators are exactly 99 dashes, and the newest
+          # entry is the version being shipped.
+          body=$(tr -d '\r' < changelog.txt)
+          if ! awk '/^-+$/ && length($0) != 99 { exit 1 }' <<< "$body"; then
+            echo "::error::changelog.txt has a separator line that is not 99 dashes"
+            exit 1
+          fi
+          newest=$(grep -m1 '^Version: ' <<< "$body" | sed 's/^Version: //')
+          if [ "$newest" != "$MOD_VERSION" ]; then
+            echo "::error::newest changelog entry is $newest but info.json says $MOD_VERSION"
+            exit 1
+          fi
+
+      - name: Package
+        run: fmtk package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.mod.outputs.name }}_${{ steps.mod.outputs.version }}
+          path: ${{ steps.mod.outputs.name }}_${{ steps.mod.outputs.version }}.zip
+          if-no-files-found: error

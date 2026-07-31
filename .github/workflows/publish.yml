@@ -1,0 +1,80 @@
+name: Publish
+
+# fmtk tags a release as a bare version by default (package.tagName is
+# "$VERSION"), so that is what this matches. Run `fmtk publish` locally to
+# datestamp the changelog, commit as compilatron, tag and push; this workflow
+# takes over from the tag and does the mod portal upload.
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install fmtk
+        run: npm install -g factoriomod-debug
+
+      - name: Read mod info
+        id: mod
+        run: |
+          {
+            echo "name=$(jq -r .name info.json)"
+            echo "version=$(jq -r .version info.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches info.json
+        if: github.ref_type == 'tag'
+        env:
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: |
+          if [ "$MOD_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match info.json version $MOD_VERSION"
+            exit 1
+          fi
+
+      - name: Verify changelog has an entry for this version
+        env:
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: |
+          # changelog.txt is CRLF in this repo, so strip CR before matching.
+          if ! tr -d '\r' < changelog.txt | grep -qxF "Version: $MOD_VERSION"; then
+            echo "::error::changelog.txt has no 'Version: $MOD_VERSION' entry"
+            exit 1
+          fi
+
+      - name: Package
+        run: fmtk package
+
+      - name: Upload to mod portal
+        env:
+          FACTORIO_UPLOAD_API_KEY: ${{ secrets.FACTORIO_UPLOAD_API_KEY }}
+          MOD_NAME: ${{ steps.mod.outputs.name }}
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: fmtk upload "${MOD_NAME}_${MOD_VERSION}.zip"
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOD_NAME: ${{ steps.mod.outputs.name }}
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: |
+          tr -d '\r' < changelog.txt \
+            | awk -v v="Version: $MOD_VERSION" \
+                '$0==v{f=1;next} f&&/^-+$/{exit} f' > release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            "${MOD_NAME}_${MOD_VERSION}.zip" \
+            --title "$MOD_VERSION" \
+            --notes-file release-notes.md
