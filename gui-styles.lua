@@ -20,12 +20,6 @@ gui_style.cybersyn_content_reader_network_selector = {
   height = 28
 }
 
-gui_style.cybersyn_content_reader_signal_display = {
-  type = "frame_style",
-  width = 280,
-  height = 300
-}
-
 gui_style.cybersyn_content_reader_label_signal_count_inventory = {
 	type = "label_style",
 	parent = "count_label",

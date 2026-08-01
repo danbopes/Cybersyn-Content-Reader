@@ -13,6 +13,127 @@ local gui = {}
 local NETWORK_SELECTOR = "network_selector"
 local NETWORK_ID_FIELD = "network_id_field"
 local SIGNAL_DISPLAY = "signal_display"
+local SIGNAL_SCROLL = "signal_scroll"
+
+-- flib's slot buttons are 40x40 at 100% UI scale, and "auto-and-reserve-space"
+-- always keeps the scrollbar gutter, so it has to be added to the pane width.
+local SLOT_SIZE = 40
+local SCROLLBAR_WIDTH = 12
+local MIN_COLUMNS = 8
+local MAX_COLUMNS = 24
+local MIN_ROWS = 3
+local MAX_ROWS = 20
+-- Fraction of the player's screen the grid is allowed to occupy.
+local WIDTH_BUDGET = 0.5
+local HEIGHT_BUDGET = 0.6
+
+--- Grid geometry for one player, in unscaled GUI pixels.
+---
+--- Columns grow with the signal count so a three-signal reader stays as compact
+--- as it is today, while a whole-network reader widens out instead of turning
+--- into a 50-row column. The screen is the hard cap either way; past it the pane
+--- scrolls. Columns are only recomputed when the window is built, since a table's
+--- column_count is fixed at creation and re-deriving it mid-session would mean
+--- rebuilding the grid out from under the player.
+---@param player LuaPlayer
+---@param signal_count integer
+---@return integer columns, integer max_height
+local function slot_grid_size(player, signal_count)
+    local scale = player.display_scale
+    if scale <= 0 then scale = 1 end
+    local resolution = player.display_resolution
+    local usable_width = resolution.width / scale
+    local usable_height = resolution.height / scale
+
+    local max_columns = math.floor((usable_width * WIDTH_BUDGET - SCROLLBAR_WIDTH) / SLOT_SIZE)
+    max_columns = math.max(MIN_COLUMNS, math.min(MAX_COLUMNS, max_columns))
+
+    -- Aim for a grid half again as wide as it is tall.
+    local columns = math.ceil(math.sqrt(signal_count * 1.6))
+    columns = math.max(MIN_COLUMNS, math.min(max_columns, columns))
+
+    -- Snapping to whole rows keeps a half-cut row from reading as a glitch.
+    local rows = math.floor(usable_height * HEIGHT_BUDGET / SLOT_SIZE)
+    rows = math.max(MIN_ROWS, math.min(MAX_ROWS, rows))
+
+    return columns, rows * SLOT_SIZE
+end
+
+---@param proto LuaItemPrototype|LuaFluidPrototype
+---@param quality string?
+local function signal_tooltip(proto, quality)
+    if not quality or quality == "normal" then
+        return proto.localised_name
+    end
+    local quality_proto = prototypes.quality[quality]
+    if not quality_proto then
+        return proto.localised_name
+    end
+    return { "", proto.localised_name, " (", quality_proto.localised_name, ")" }
+end
+
+--- Section 2 is rebuilt from a hash table on every update, so its order drifts
+--- between refreshes. Sorting into prototype order gives the grid a fixed layout
+--- a player can actually scan when a network holds hundreds of signals.
+---@param filters LogisticFilter[]
+local function sorted_entries(filters)
+    local entries = {}
+    for _, filter in pairs(filters) do
+        local value = filter.value
+        if value and value.name then
+            local kind = value.type or "item"
+            local protos = prototypes[kind]
+            -- Section 2 is persisted in the save, so it can still name a
+            -- prototype belonging to a mod that has since been removed.
+            local proto = protos and protos[value.name]
+            if proto then
+                local subgroup = proto.subgroup
+                local group = subgroup and subgroup.group
+                entries[#entries + 1] = {
+                    filter = filter,
+                    proto = proto,
+                    -- Type, name and quality make the key a total order, so the
+                    -- result is identical on every client.
+                    sort_key = table.concat({
+                        group and group.order or "",
+                        subgroup and subgroup.order or "",
+                        proto.order or "",
+                        kind,
+                        value.name,
+                        value.quality or "normal",
+                    }, "\0"),
+                }
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b) return a.sort_key < b.sort_key end)
+    return entries
+end
+
+---@param combinator LuaEntity
+---@return LogisticFilter[]
+local function output_filters(combinator)
+    local behavior = combinator.get_control_behavior()
+    if not behavior then return {} end
+    local section = behavior.get_section(2)
+    if not section then return {} end
+    return section.filters
+end
+
+---@param player LuaPlayer
+local function close_gui(player)
+    local ref = storage.guis[player.index]
+    if not ref then return end
+
+    -- Cleared first: destroying a window that is still player.opened comes back
+    -- through on_gui_closed, and the second pass has to find nothing to do.
+    storage.guis[player.index] = nil
+    if ref.window and ref.window.valid then
+        ref.window.destroy()
+    end
+    player.play_sound({ path = "entity-close/cybersyn-combinator" })
+end
 
 local function handle_network_switch(event)
     if event.name == defines.events.on_gui_elem_changed or event.name == defines.events.on_gui_text_changed then
@@ -46,12 +167,12 @@ end
 local function on_gui_opened(event)
     if not event.entity then return end
     if not content_readers[event.entity.name] then return end
-  
+
     local player = game.get_player(event.player_index)
     if not player then return end
-  
+
     player.opened = nil
-  
+
     -- Create the GUI
     gui.create_gui(player, event.entity)
 
@@ -59,33 +180,21 @@ end
 
 local function handle_close(event)
     if not event.element then return end
-  
+
     local player = game.get_player(event.player_index)
     if not player then return end
-  
-    -- Remove the GUI
-    local ref = storage.guis[player.index]
-    if ref then
-      ref.window.destroy()
-      player.play_sound({ path = "entity-close/cybersyn-combinator" })
-      storage.guis[player.index] = nil
-    end
+
+    close_gui(player)
 end
-  
+
   -- Handle closing the combinator GUI
 local function on_gui_closed(event)
     if not event.element or event.element.name ~= "cybersyn_content_reader_gui" then return end
-  
+
     local player = game.get_player(event.player_index)
     if not player then return end
-  
-    -- Remove the GUI
-    local ref = storage.guis[player.index]
-    if ref then
-      ref.window.destroy()
-      player.play_sound({ path = "entity-close/cybersyn-combinator" })
-      storage.guis[player.index] = nil
-    end
+
+    close_gui(player)
 end
 
 -- Create the GUI for a combinator
@@ -100,6 +209,8 @@ function gui.create_gui(player, combinator)
     local slot = get_first_signal(combinator) or {}
     local current_signal = slot.value or nil
     local current_id = slot.min or default_network
+
+    local columns, max_height = slot_grid_size(player, #output_filters(combinator))
 
     local refs, main_window = flib_gui.add(player.gui.screen, {
         type = "frame",
@@ -187,13 +298,22 @@ function gui.create_gui(player, combinator)
                         style = "deep_frame_in_shallow_frame",
                         children = {
                             {
-                                type = "table",
-                                name = SIGNAL_DISPLAY,
-                                style = "slot_table",
-                                direction = "vertical",
-                                column_count = 8,
+                                type = "scroll-pane",
+                                name = SIGNAL_SCROLL,
+                                style = "flib_naked_scroll_pane_no_padding",
+                                horizontal_scroll_policy = "never",
+                                vertical_scroll_policy = "auto-and-reserve-space",
                                 style_mods = {
-                                    right_padding = 0,
+                                    width = SLOT_SIZE * columns + SCROLLBAR_WIDTH,
+                                    maximal_height = max_height,
+                                },
+                                children = {
+                                    {
+                                        type = "table",
+                                        name = SIGNAL_DISPLAY,
+                                        style = "slot_table",
+                                        column_count = columns,
+                                    }
                                 }
                             }
                         }
@@ -204,26 +324,22 @@ function gui.create_gui(player, combinator)
     })
 
     refs.titlebar.drag_target = main_window
-    main_window.force_auto_center()
 
     storage.guis[player.index] = {
         context = combinator,
         window = main_window,
         [NETWORK_SELECTOR] = refs[NETWORK_SELECTOR],
         [NETWORK_ID_FIELD] = refs[NETWORK_ID_FIELD],
+        [SIGNAL_SCROLL] = refs[SIGNAL_SCROLL],
         [SIGNAL_DISPLAY] = refs[SIGNAL_DISPLAY],
     }
 
-    -- Signal display
-    -- local signal_frame = main_window.add{
-    --     type = "frame",
-    --     name = SIGNAL_DISPLAY,
-    --     style = "cybersyn_content_reader_signal_display",
-    --     direction = "vertical"
-    -- }
-
     -- Update the signal display
     gui.update_signal_display(player, combinator)
+
+    -- Centred only once the grid holds its rows: centring the empty window
+    -- first leaves it hanging off the bottom of the screen as the rows arrive.
+    main_window.force_auto_center()
 
     player.opened = main_window
 end
@@ -236,77 +352,80 @@ function gui.update_signal_display(player, combinator)
     if not ref then return end
 
     --- @type LuaGuiElement
-    local signal_frame = ref[SIGNAL_DISPLAY]
-    if not signal_frame or not signal_frame.valid then return end
+    local signal_table = ref[SIGNAL_DISPLAY]
+    if not signal_table or not signal_table.valid then return end
 
-    signal_frame.clear()
+    local entries = sorted_entries(output_filters(combinator))
 
-    local behavior = combinator.get_control_behavior() ---@type LuaConstantCombinatorControlBehavior
-    if not behavior then return end
+    -- Clearing and refilling the table would snap the pane back to the top on
+    -- every update tick, so buttons are updated in place and only the surplus is
+    -- destroyed. It also saves rebuilding hundreds of elements twice a second.
+    local buttons = signal_table.children
+    for i = 1, #entries do
+        local entry = entries[i]
+        local value = entry.filter.value
+        local sprite = (value.type or "item") .. "/" .. value.name
+        local tooltip = signal_tooltip(entry.proto, value.quality)
 
-    local section = behavior.get_section(2)
-    if not section then return end
-
-    --local columns = 10
-
-    -- Display signals as icon buttons with count below
-    --local flow = signal_frame.add{
-    --    type = "flow",
-	--	{
-	--		type = "frame",
-	--		style = "deep_frame_in_shallow_frame",
-	--		style_mods = { height = 200 },
-	--		ref = { "inventory", "frame" },
-	--		{
-	--			type = "scroll-pane",
-	--			style = "ltnm_slot_table_scroll_pane",
-	--			style_mods = { width = 40 * columns + 12, minimal_height = 400 },
-	--			vertical_scroll_policy = "auto-and-reserve-space",
-	--			-- vertical_scroll_policy = "always",
-	--			ref = { "inventory", "scroll_pane" },
-	--			{
-	--				type = "table",
-	--				name = "inventory_table",
-	--				style = "slot_table",
-	--				column_count = columns,
-	--				ref = { "inventory", "table" }
-	--			},
-	--		},
-	--	},
-    --}
-    
-    for _, signal in pairs(section.filters) do
-        if signal.value then
-            local item_prototype = prototypes[signal.value.type][signal.value.name]
-            local caption = format_signal_count(signal.min)
-            local button = signal_frame.add({
+        local button = buttons[i]
+        if button then
+            button.sprite = sprite
+            button.number = entry.filter.min
+            button.tooltip = tooltip
+        else
+            signal_table.add({
                 type = "sprite-button",
-                sprite = signal.value.type .. "/" .. signal.value.name,
                 style = "flib_slot_button_default",
-                tooltip = {
-                    "",
-                    item_prototype.localised_name,
-                },
-                number = signal.min,
-                -- children = {
-                --     {
-                --         type = "label",
-                --         style = "cybersyn_content_reader_label_signal_count_inventory",
-                --         ignored_by_interaction = true,
-                --         caption = caption,
-                --     },
-                -- }
+                sprite = sprite,
+                number = entry.filter.min,
+                tooltip = tooltip,
             })
-            button.number = signal.min
         end
+    end
+
+    for i = #buttons, #entries + 1, -1 do
+        buttons[i].destroy()
+    end
+end
+
+--- A table's column_count cannot be changed after creation, so re-fitting the
+--- grid to a new screen size means replacing the table rather than the window:
+--- rebuilding the window would disturb player.opened while it is open.
+---@param event EventData.on_player_display_resolution_changed|EventData.on_player_display_scale_changed
+local function on_display_changed(event)
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    local ref = storage.guis[player.index]
+    if not ref then return end
+
+    local scroll = ref[SIGNAL_SCROLL]
+    if not scroll or not scroll.valid then return end
+
+    local combinator = ref.context
+    if not combinator or not combinator.valid then return end
+
+    local columns, max_height = slot_grid_size(player, #output_filters(combinator))
+    scroll.style.width = SLOT_SIZE * columns + SCROLLBAR_WIDTH
+    scroll.style.maximal_height = max_height
+
+    scroll.clear()
+    ref[SIGNAL_DISPLAY] = scroll.add({
+        type = "table",
+        name = SIGNAL_DISPLAY,
+        style = "slot_table",
+        column_count = columns,
+    })
+
+    gui.update_signal_display(player, combinator)
+
+    if ref.window and ref.window.valid then
+        ref.window.force_auto_center()
     end
 end
 
 function gui.on_init()
     storage.guis = {}
-    -- Register event handlers
-    -- script.on_event(defines.events.on_gui_elem_changed, gui.on_gui_elem_changed)
-    -- script.on_event(defines.events.on_gui_text_changed, gui.on_gui_text_changed)
 end
 
 flib_gui.add_handlers({
@@ -317,5 +436,7 @@ flib_gui.handle_events()
 
 script.on_event(defines.events.on_gui_opened, on_gui_opened)
 script.on_event(defines.events.on_gui_closed, on_gui_closed)
+script.on_event(defines.events.on_player_display_resolution_changed, on_display_changed)
+script.on_event(defines.events.on_player_display_scale_changed, on_display_changed)
 
 return gui

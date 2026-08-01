@@ -1,7 +1,13 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.1
 Date: ????
-  Changes:
+  Features:
+    - The signal grid now scrolls and sizes itself to your screen, so networks with hundreds of signals no longer run off the bottom of the display
+  Bugfixes:
+    - Signals are now shown in a stable prototype order instead of reshuffling on every update
+    - Opening a reader no longer errors when its stored output names an item from a removed mod
+  Optimizations:
+    - The signal grid is updated in place instead of being rebuilt from scratch on every update tick
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.0
 Date: 2026-07-31
