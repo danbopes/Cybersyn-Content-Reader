@@ -2,6 +2,7 @@
 Version: 1.1.2
 Date: ????
   Changes:
+    - No functional changes. Re-released so the mod portal picks up the correct release date for 1.1.1.
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.1
 Date: 2026-08-01
