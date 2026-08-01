@@ -15,6 +15,12 @@ permissions:
 
 jobs:
   publish:
+    # A dispatch from a branch has no tag to verify against and no ref to hang a
+    # release off, so the tag-gated steps silently skipped while the portal
+    # upload still ran, publishing a version with no tag and no release.
+    # Requiring a tag for the whole job makes that impossible; dispatching
+    # against a tag still works, which is what re-running a partial publish needs.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +41,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify tag matches info.json
-        if: github.ref_type == 'tag'
         env:
           MOD_VERSION: ${{ steps.mod.outputs.version }}
         run: |
@@ -57,7 +62,26 @@ jobs:
       - name: Package
         run: fmtk package
 
+      - name: Check whether the portal already has this version
+        id: portal
+        env:
+          MOD_NAME: ${{ steps.mod.outputs.name }}
+          MOD_VERSION: ${{ steps.mod.outputs.version }}
+        run: |
+          # The portal rejects a duplicate version, which would fail the run
+          # before the release step and leave the tag with no GitHub release.
+          # Skipping an upload that is already done makes a re-run recoverable.
+          if curl -sf "https://mods.factorio.com/api/mods/${MOD_NAME}" \
+              | jq -e --arg v "$MOD_VERSION" \
+                  'any(.releases[]; .version == $v)' >/dev/null; then
+            echo "::notice::${MOD_NAME} ${MOD_VERSION} is already on the portal, skipping upload"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload to mod portal
+        if: steps.portal.outputs.exists != 'true'
         env:
           FACTORIO_UPLOAD_API_KEY: ${{ secrets.FACTORIO_UPLOAD_API_KEY }}
           MOD_NAME: ${{ steps.mod.outputs.name }}
@@ -65,7 +89,6 @@ jobs:
         run: fmtk upload "${MOD_NAME}_${MOD_VERSION}.zip"
 
       - name: Create GitHub release
-        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
           MOD_NAME: ${{ steps.mod.outputs.name }}
