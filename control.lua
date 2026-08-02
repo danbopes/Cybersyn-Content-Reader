@@ -81,8 +81,22 @@ end
 
 --- Fold one station into the three aggregate tables.
 local function scan_station(id, provided, requested, in_transit)
-  local stop = station_field(id, "entity_stop")
-  if not stop or not stop.valid then return end
+  -- read_global's second return is how many arguments it resolved before it hit
+  -- a nil, which is the only way to tell "this station has no stop" from "this
+  -- station does not exist". Stopping at 2 means Cybersyn has nothing under
+  -- this id, so the index entry is dead and is dropped here. Clearing the key
+  -- being visited is defined behaviour for pairs().
+  --
+  -- Cybersyn does raise on_station_removed for every removal, but the event
+  -- does not always arrive: on a real 1800-station save there is a station
+  -- whose removal Cybersyn raises with a live listener and whose event never
+  -- reaches this mod's handler. Without this the id is walked forever.
+  local stop, depth = station_field(id, "entity_stop")
+  if not stop then
+    if depth == 2 then storage.cybersyn_station_ids[id] = nil end
+    return
+  end
+  if not stop.valid then return end
 
   local network_name = station_field(id, "network_name") or "__all"
   local network_mask = station_field(id, "network_mask")
@@ -365,9 +379,12 @@ end
 --
 -- The set of stations only changes when Cybersyn says so, and it raises
 -- on_station_created / on_station_removed for exactly that. Keeping the index
--- here means the whole table is read once at init and never again -- there is
--- no periodic resync, because there is no way for the index to drift without
--- one of those events firing.
+-- here means the whole table is read once at init and never again.
+--
+-- The events are not quite enough on their own: a removal can be raised and
+-- still not arrive, so an id can outlive the station it names. scan_station
+-- drops those as it meets them, which costs nothing because it already asks
+-- for the field that gives the answer. There is still no periodic resync.
 
 --- Read the full station table. Only correct as initialisation: on_init, or
 --- on_configuration_changed where stations may have appeared or vanished while

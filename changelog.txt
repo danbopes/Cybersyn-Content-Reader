@@ -11,6 +11,10 @@ Date: ????
   Changes:
     - Requires Cybersyn's interop events (station created/removed). No configuration needed; the
       station list is rebuilt automatically on load and whenever mods change.
+  Bugfixes:
+    - The network selector now spans the whole window instead of stopping partway across it, and
+      the empty strip below it is gone. Both appeared once the signal grid grew wide enough to
+      set the window width.
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.3
 Date: ????
