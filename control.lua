@@ -434,7 +434,6 @@ do
 
   function Ensure_Cybersyn_Events()
     if cybersyn_events_ready then return end
-    cybersyn_events_ready = true
 
     script.on_event(remote.call("cybersyn", "get_on_station_created"), OnStationCreated)
     script.on_event(remote.call("cybersyn", "get_on_station_removed"), OnStationRemoved)
@@ -443,6 +442,10 @@ do
     -- station it created or destroyed between this load and now went unheard.
     -- One rebuild closes that window. It happens once per load, not on a timer.
     Rebuild_Station_Ids()
+
+    -- Set last: if any of the above fails the next tick retries, rather than
+    -- leaving the mod running forever against an index it never built.
+    cybersyn_events_ready = true
   end
 
   local reader_filter = {}
@@ -493,13 +496,16 @@ do
 
   script.on_configuration_changed(function(data)
     init_globals()
-    -- Cybersyn may have been added, updated or removed, so its event ids are
-    -- reacquired and the station index rebuilt. This is the one point where
-    -- stations can have changed without us hearing an event, because we were
-    -- not loaded to hear it.
-    cybersyn_events_ready = false
-    Ensure_Cybersyn_Events()
     Rescan_Combinators()
+
+    -- Cybersyn may have been added, updated or removed, so its event ids have
+    -- to be reacquired and the station index rebuilt. That is deliberately NOT
+    -- done here: Cybersyn runs its own migrations in this same phase, and
+    -- reading its stations mid-migration could capture a half-updated set.
+    -- Clearing the flag defers both to the first tick, by which point every
+    -- mod has finished configuring.
+    cybersyn_events_ready = false
+
     -- prototypes may have changed, which is the only thing that can invalidate
     -- a decoded signal
     clear_signal_value_cache()
