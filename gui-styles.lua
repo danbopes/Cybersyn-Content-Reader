@@ -1,10 +1,16 @@
 local gui_style = data.raw["gui-style"]["default"]
 
+-- subheader_frame is 36px tall, which clips the 40px signal button, so the
+-- height is re-derived from the button rather than inherited.
 gui_style.cybersyn_content_reader_network_selector_frame = {
 	type = "frame_style",
 	parent = "subheader_frame",
-	top_margin = 4,
-	bottom_margin = 12,
+	horizontally_stretchable = "on",
+	height = 48,
+	left_padding = 12,
+	right_padding = 12,
+	top_padding = 4,
+	bottom_padding = 4,
 	vertical_align = "center",
 	horizontal_flow_style = {
 		type = "horizontal_flow_style",

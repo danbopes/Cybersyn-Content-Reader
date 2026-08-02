@@ -240,79 +240,81 @@ function gui.create_gui(player, combinator)
                     },
                 }
             },
+            -- One panel, subheader on top: the subheader only spans the window
+            -- if it is a direct child of the frame the grid also sits in, and
+            -- the grid is what decides how wide that is.
             {
                 type = "frame",
-                style = "inside_deep_frame",
-                direction = "vertical",
-                children = {
-                    type = "frame",
-                    style = "cybersyn_content_reader_network_selector_frame",
-                    children = {
-                        {
-                            type = "label",
-                            caption = "Network Signal:",
-                        },
-                        {
-                            type = "choose-elem-button",
-                            name = NETWORK_SELECTOR,
-                            elem_type = "signal",
-                            signal = current_signal,
-                            handler = handle_network_switch,
-                        },
-                        {
-                            type = "label",
-                            caption = "Network ID:",
-                            style_mods = {
-                                vertical_align = "center",
-                            },
-                        },
-                        {
-                            type = "textfield",
-                            name = NETWORK_ID_FIELD,
-                            style_mods = {
-                                width = 100,
-                            },
-                            numeric = true,
-                            allow_negative = true,
-                            text = tostring(current_id),
-                            handler = handle_network_switch,
-                        }
-                    }
-                }
-            },
-            {
-                type = "frame",
-                style = "inside_shallow_frame_with_padding",
+                style = "inside_shallow_frame",
                 direction = "vertical",
                 children = {
                     {
-                        type = "label",
-                        caption = "Signals:",
-                        style = "subheader_caption_label",
-                        style_mods = {
-                            bottom_padding = 4,
+                        type = "frame",
+                        style = "cybersyn_content_reader_network_selector_frame",
+                        children = {
+                            {
+                                type = "label",
+                                caption = "Network Signal:",
+                            },
+                            {
+                                type = "choose-elem-button",
+                                name = NETWORK_SELECTOR,
+                                elem_type = "signal",
+                                signal = current_signal,
+                                handler = handle_network_switch,
+                            },
+                            {
+                                type = "label",
+                                caption = "Network ID:",
+                            },
+                            {
+                                type = "textfield",
+                                name = NETWORK_ID_FIELD,
+                                style_mods = {
+                                    width = 100,
+                                },
+                                numeric = true,
+                                allow_negative = true,
+                                text = tostring(current_id),
+                                handler = handle_network_switch,
+                            }
                         }
                     },
                     {
-                        type = "frame",
-                        style = "deep_frame_in_shallow_frame",
+                        type = "flow",
+                        direction = "vertical",
+                        style_mods = {
+                            padding = 12,
+                            vertical_spacing = 8,
+                        },
                         children = {
                             {
-                                type = "scroll-pane",
-                                name = SIGNAL_SCROLL,
-                                style = "flib_naked_scroll_pane_no_padding",
-                                horizontal_scroll_policy = "never",
-                                vertical_scroll_policy = "auto-and-reserve-space",
-                                style_mods = {
-                                    width = SLOT_SIZE * columns + SCROLLBAR_WIDTH,
-                                    maximal_height = max_height,
-                                },
+                                type = "label",
+                                caption = "Signals:",
+                                style = "caption_label",
+                            },
+                            {
+                                type = "frame",
+                                style = "deep_frame_in_shallow_frame",
                                 children = {
                                     {
-                                        type = "table",
-                                        name = SIGNAL_DISPLAY,
-                                        style = "slot_table",
-                                        column_count = columns,
+                                        type = "scroll-pane",
+                                        name = SIGNAL_SCROLL,
+                                        style = "flib_naked_scroll_pane_no_padding",
+                                        horizontal_scroll_policy = "never",
+                                        vertical_scroll_policy = "auto-and-reserve-space",
+                                        style_mods = {
+                                            width = SLOT_SIZE * columns + SCROLLBAR_WIDTH,
+                                            maximal_height = max_height,
+                                        },
+                                        children = {
+                                            {
+                                                type = "table",
+                                                name = SIGNAL_DISPLAY,
+                                                style = "slot_table",
+                                                column_count = columns,
+                                            }
+                                        }
                                     }
                                 }
                             }
