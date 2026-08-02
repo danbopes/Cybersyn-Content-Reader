@@ -214,12 +214,45 @@ function InitSignals()
   storage.cybersyn_deliveries = inventory_in_transit
 end
 
+-- Cybersyn allocates its interop event ids at runtime with
+-- script.generate_event_name, and only starts raising an event once its getter
+-- has been called. Both facts mean the ids cannot be cached across a save:
+-- after a load they have not been allocated again, and an id from the previous
+-- session is rejected as "not a valid event".
+--
+-- They also cannot be fetched in on_load, where remote.call is forbidden. So
+-- they are acquired on the first tick after a load instead. This local resets
+-- every load, which is exactly the trigger we want.
+local cybersyn_events_ready = false
+
+function Ensure_Cybersyn_Events()
+  script.on_event(remote.call("cybersyn", "get_on_station_created"), OnStationCreated)
+  script.on_event(remote.call("cybersyn", "get_on_station_removed"), OnStationRemoved)
+
+  -- Until the getters above are called Cybersyn raises nothing, so any station
+  -- it created or destroyed between this load and now went unheard. One rebuild
+  -- closes that window. It happens once per load, not on a timer.
+  Rebuild_Station_Ids()
+
+  cybersyn_events_ready = true
+end
+
+--- Stands in for OnTick for exactly one tick after a load, then takes itself
+--- out of the way. One tick has to do the acquisition above, but only one, so
+--- it is a separate handler that swaps itself for the real one rather than a
+--- branch every tick forever.
+---
+--- The swap is after the acquisition on purpose: if that raises, this is still
+--- the registered handler and the next tick retries, rather than leaving the
+--- mod running forever against an index it never built.
+function OnFirstTick(event)
+  Ensure_Cybersyn_Events()
+  script.on_event(defines.events.on_tick, OnTick)
+  OnTick(event)
+end
+
 -- spread out updating combinators
 function OnTick(event)
-  -- First tick after a load: pick up Cybersyn's station events, which cannot
-  -- be subscribed to any earlier (see Ensure_Cybersyn_Events).
-  Ensure_Cybersyn_Events()
-
   -- global.update_interval LTN update interval are synchronized in OnDispatcherUpdated
   local offset = event.tick % storage.update_interval
   local cc_count = #storage.content_combinators
@@ -315,9 +348,11 @@ function Update_Combinator(combinator)
 end
 
 -- The on_tick handler is only subscribed while there is something to update.
+-- Until Cybersyn's events have been picked up, the one-shot handler that does
+-- that is the one subscribed; it hands over to OnTick itself.
 function Update_Tick_Subscription()
   if #storage.content_combinators > 0 then
-    script.on_event(defines.events.on_tick, OnTick)
+    script.on_event(defines.events.on_tick, cybersyn_events_ready and OnTick or OnFirstTick)
   else
     script.on_event(defines.events.on_tick, nil)
   end
@@ -438,33 +473,6 @@ do
     storage.update_interval = settings.global["cybersyn_content_reader_update_interval"].value
   end
 
-  -- Cybersyn allocates its interop event ids at runtime with
-  -- script.generate_event_name, and only starts raising an event once its
-  -- getter has been called. Both facts mean the ids cannot be cached across a
-  -- save: after a load they have not been allocated again, and an id from the
-  -- previous session is rejected as "not a valid event".
-  --
-  -- They also cannot be fetched in on_load, where remote.call is forbidden.
-  -- So they are acquired on the first tick after a load instead. This local
-  -- resets every load, which is exactly the trigger we want.
-  local cybersyn_events_ready = false
-
-  function Ensure_Cybersyn_Events()
-    if cybersyn_events_ready then return end
-
-    script.on_event(remote.call("cybersyn", "get_on_station_created"), OnStationCreated)
-    script.on_event(remote.call("cybersyn", "get_on_station_removed"), OnStationRemoved)
-
-    -- Until the getters above are called Cybersyn raises nothing, so any
-    -- station it created or destroyed between this load and now went unheard.
-    -- One rebuild closes that window. It happens once per load, not on a timer.
-    Rebuild_Station_Ids()
-
-    -- Set last: if any of the above fails the next tick retries, rather than
-    -- leaving the mod running forever against an index it never built.
-    cybersyn_events_ready = true
-  end
-
   local reader_filter = {}
   for name in pairs(content_readers) do
     reader_filter[#reader_filter + 1] = { filter = "name", name = name }
@@ -497,9 +505,7 @@ do
       script.on_event(id, OnEntityRemoved, reader_filter)
     end
 
-    if #storage.content_combinators > 0 then
-      script.on_event(defines.events.on_tick, OnTick)
-    end
+    Update_Tick_Subscription()
   end
 
 
@@ -513,7 +519,6 @@ do
 
   script.on_configuration_changed(function(data)
     init_globals()
-    Rescan_Combinators()
 
     -- Cybersyn may have been added, updated or removed, so its event ids have
     -- to be reacquired and the station index rebuilt. That is deliberately NOT
@@ -521,7 +526,11 @@ do
     -- reading its stations mid-migration could capture a half-updated set.
     -- Clearing the flag defers both to the first tick, by which point every
     -- mod has finished configuring.
+    --
+    -- Cleared before the rescan, because that is what re-arms the one-shot
+    -- tick handler.
     cybersyn_events_ready = false
+    Rescan_Combinators()
 
     -- prototypes may have changed, which is the only thing that can invalidate
     -- a decoded signal
