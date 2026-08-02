@@ -1,13 +1,17 @@
 {
   "name": "Cybersyn-Content-Reader",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "title": "Cybersyn Network Content Reader",
   "author": "Danbopes",
   "contact": "https://forums.factorio.com/memberlist.php?mode=viewprofile&u=157577",
   "homepage": "https://mods.factorio.com/mod/Cybersyn-Content-Reader",
   "description": "Display Cybersyn's Provided and Requested content for specific Network ID's as combinator output.",
   "factorio_version": "2.1",
-  "dependencies": ["base >= 2.1.7", "flib >= 0.17.1", "cybersyn >= 2.1.2"],
+  "dependencies": [
+    "base >= 2.1.7",
+    "flib >= 0.17.1",
+    "cybersyn >= 2.1.2"
+  ],
   "package": {
     "git_publish_branch": "master",
     "ignore": [],
