@@ -83,6 +83,48 @@ function split(str)
     return first, second
 end
 
+-- Decoding a hash back into a signal is a pure function of the string, so it
+-- is done once per distinct item instead of once per item, per combinator, per
+-- update. The cached table is the exact value handed to
+-- LuaLogisticSection.filters, so the filter list is no longer rebuilt from
+-- scratch either, and the prototype existence check happens once rather than
+-- on every read.
+--
+-- NOTE: the returned table is shared by every filter referencing that item.
+-- Factorio converts it on assignment and does not retain it, but nothing may
+-- mutate it in place.
+--
+-- This is deliberately NOT in storage: it is derived, and rebuilding it costs
+-- one parse per item. The only thing that can invalidate it is the prototype
+-- set changing, which raises on_configuration_changed. There is no periodic
+-- resync because nothing else can make an entry wrong.
+local signal_values = {}
+
+---@param hash string
+---@return SignalFilter? value nil if the prototype no longer exists
+function signal_value_for(hash)
+  local v = signal_values[hash]
+  if v ~= nil then return v or nil end
+
+  local itype, iname, iquality = unhash_signal(hash)
+  if itype and iname and (itype == "item" and prototypes.item[iname]
+      or itype == "fluid" and prototypes.fluid[iname]) then
+    v = { type = itype, name = iname, quality = iquality }
+  else
+    -- Remember the miss too. A hash naming a prototype that no longer exists
+    -- would otherwise be re-parsed and re-rejected on every single update.
+    v = false
+  end
+  signal_values[hash] = v
+  return v or nil
+end
+
+--- Drop the decode cache. Only correct to call when the prototype set may have
+--- changed, i.e. from on_configuration_changed.
+function clear_signal_value_cache()
+  signal_values = {}
+end
+
 ---@param entity LuaEntity
 function get_first_signal(entity)
      ---@type LuaConstantCombinatorControlBehavior
